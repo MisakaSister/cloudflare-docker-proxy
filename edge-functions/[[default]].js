@@ -8,7 +8,7 @@ function getRoutes(customDomain) {
   // 同时支持其他子域名：quay.docker.wengguodong.com -> Quay.io
   if (customDomain.startsWith("docker.")) {
     return {
-      [customDomain]: dockerHub, // 根域名直接指向 Docker Hub
+      [customDomain]: dockerHub,
       ["quay." + customDomain]: "https://quay.io",
       ["gcr." + customDomain]: "https://gcr.io",
       ["k8s-gcr." + customDomain]: "https://k8s.gcr.io",
@@ -172,20 +172,33 @@ export async function onRequest(context) {
     const { request, env } = context;
     const url = new URL(request.url);
     
-    const CUSTOM_DOMAIN = env?.CUSTOM_DOMAIN || "";
-    const MODE = env?.MODE || "production";
-    const TARGET_UPSTREAM = env?.TARGET_UPSTREAM || "";
+    // 测试端点：确认函数是否被触发
+    if (url.pathname === "/test" || url.pathname === "/ping") {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          message: "EdgeOne Functions is working!",
+          hostname: url.hostname,
+          pathname: url.pathname,
+          timestamp: new Date().toISOString(),
+        }, null, 2),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
     
     // 调试信息：如果访问 /debug 路径，返回配置信息
     if (url.pathname === "/debug" || url.pathname === "/.well-known/debug") {
-      const routes = getRoutes(CUSTOM_DOMAIN);
+      const routes = getRoutes(env?.CUSTOM_DOMAIN || "");
       return new Response(
         JSON.stringify({
           hostname: url.hostname,
           pathname: url.pathname,
-          CUSTOM_DOMAIN: CUSTOM_DOMAIN,
-          MODE: MODE,
-          TARGET_UPSTREAM: TARGET_UPSTREAM,
+          CUSTOM_DOMAIN: env?.CUSTOM_DOMAIN || "",
+          MODE: env?.MODE || "production",
+          TARGET_UPSTREAM: env?.TARGET_UPSTREAM || "",
           routes: routes,
           availableRoutes: Object.keys(routes),
           envKeys: Object.keys(env || {}),
@@ -196,6 +209,10 @@ export async function onRequest(context) {
         }
       );
     }
+    
+    const CUSTOM_DOMAIN = env?.CUSTOM_DOMAIN || "";
+    const MODE = env?.MODE || "production";
+    const TARGET_UPSTREAM = env?.TARGET_UPSTREAM || "";
     
     const routes = getRoutes(CUSTOM_DOMAIN);
     let upstream = routeByHosts(url.hostname, routes, MODE, TARGET_UPSTREAM);
@@ -266,3 +283,4 @@ export async function onRequest(context) {
     );
   }
 }
+
