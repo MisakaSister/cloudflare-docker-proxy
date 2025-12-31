@@ -158,8 +158,33 @@ export async function onRequest(context) {
     const TARGET_UPSTREAM = env?.TARGET_UPSTREAM || "";
     
     const routes = getRoutes(CUSTOM_DOMAIN);
-    const upstream = routeByHosts(url.hostname, routes, MODE, TARGET_UPSTREAM);
+    let upstream = routeByHosts(url.hostname, routes, MODE, TARGET_UPSTREAM);
     
+    // 如果使用 EdgeOne Pages 默认域名，需要特殊处理
+    const isEdgeOneDefaultDomain = url.hostname.includes(".edgeone.");
+    
+    if (upstream === "" && isEdgeOneDefaultDomain) {
+      // 尝试从查询参数获取路由类型
+      const routeType = url.searchParams.get("route") || url.searchParams.get("registry");
+      if (routeType && CUSTOM_DOMAIN) {
+        const routeKey = routeType + "." + CUSTOM_DOMAIN;
+        if (routeKey in routes) {
+          upstream = routes[routeKey];
+        }
+      }
+      
+      // 如果仍然没有匹配，且设置了 TARGET_UPSTREAM，使用它作为默认上游
+      if (upstream === "" && TARGET_UPSTREAM) {
+        upstream = TARGET_UPSTREAM;
+      }
+      
+      // 如果还是没有匹配，默认使用 Docker Hub（这是最常见的用例）
+      if (upstream === "") {
+        upstream = dockerHub;
+      }
+    }
+    
+    // 如果还是没有匹配到任何上游，返回错误信息
     if (upstream === "") {
       return new Response(
         JSON.stringify({
@@ -171,6 +196,9 @@ export async function onRequest(context) {
           hint: CUSTOM_DOMAIN
             ? `Please access using one of: ${Object.keys(routes).join(", ")}`
             : "Please set CUSTOM_DOMAIN environment variable in EdgeOne Pages settings",
+          usage: isEdgeOneDefaultDomain
+            ? "When using EdgeOne default domain, it defaults to Docker Hub. Use ?route=docker|quay|gcr|ghcr to specify other registries."
+            : "Use custom domain subdomains to access different registries",
         }, null, 2),
         {
           status: 404,
