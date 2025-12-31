@@ -1,59 +1,34 @@
 const dockerHub = "https://registry-1.docker.io";
 
-function getEnvVar(name, defaultValue = "") {
-  if (typeof process !== "undefined" && process.env && process.env[name]) {
-    return process.env[name];
-  }
-  if (typeof globalThis !== "undefined" && globalThis[name]) {
-    return globalThis[name];
-  }
-  return defaultValue;
+function getRoutes(customDomain) {
+  if (!customDomain) return {};
+  return {
+    ["docker." + customDomain]: dockerHub,
+    ["quay." + customDomain]: "https://quay.io",
+    ["gcr." + customDomain]: "https://gcr.io",
+    ["k8s-gcr." + customDomain]: "https://k8s.gcr.io",
+    ["k8s." + customDomain]: "https://registry.k8s.io",
+    ["ghcr." + customDomain]: "https://ghcr.io",
+    ["cloudsmith." + customDomain]: "https://docker.cloudsmith.io",
+    ["ecr." + customDomain]: "https://public.ecr.aws",
+    ["docker-staging." + customDomain]: dockerHub,
+  };
 }
 
-const CUSTOM_DOMAIN = getEnvVar("CUSTOM_DOMAIN", "");
-const MODE = getEnvVar("MODE", "production");
-const TARGET_UPSTREAM = getEnvVar("TARGET_UPSTREAM", "");
-
-const routes = {
-  // production
-  ["docker." + CUSTOM_DOMAIN]: dockerHub,
-  ["quay." + CUSTOM_DOMAIN]: "https://quay.io",
-  ["gcr." + CUSTOM_DOMAIN]: "https://gcr.io",
-  ["k8s-gcr." + CUSTOM_DOMAIN]: "https://k8s.gcr.io",
-  ["k8s." + CUSTOM_DOMAIN]: "https://registry.k8s.io",
-  ["ghcr." + CUSTOM_DOMAIN]: "https://ghcr.io",
-  ["cloudsmith." + CUSTOM_DOMAIN]: "https://docker.cloudsmith.io",
-  ["ecr." + CUSTOM_DOMAIN]: "https://public.ecr.aws",
-
-  // staging
-  ["docker-staging." + CUSTOM_DOMAIN]: dockerHub,
-};
-
-function routeByHosts(host) {
+function routeByHosts(host, routes, mode, targetUpstream) {
   if (host in routes) {
     return routes[host];
   }
-  if (MODE == "debug") {
-    return TARGET_UPSTREAM;
+  if (mode == "debug" && targetUpstream) {
+    return targetUpstream;
   }
   return "";
 }
 
-async function handleRequest(request) {
+async function handleRequest(request, upstream, mode) {
   const url = new URL(request.url);
   if (url.pathname == "/") {
     return Response.redirect(url.protocol + "//" + url.host + "/v2/", 301);
-  }
-  const upstream = routeByHosts(url.hostname);
-  if (upstream === "") {
-    return new Response(
-      JSON.stringify({
-        routes: routes,
-      }),
-      {
-        status: 404,
-      }
-    );
   }
   const isDockerHub = upstream == dockerHub;
   const authorization = request.headers.get("Authorization");
@@ -63,18 +38,16 @@ async function handleRequest(request) {
     if (authorization) {
       headers.set("Authorization", authorization);
     }
-    // check if need to authenticate
     const resp = await fetch(newUrl.toString(), {
       method: "GET",
       headers: headers,
       redirect: "follow",
     });
     if (resp.status === 401) {
-      return responseUnauthorized(url);
+      return responseUnauthorized(url, mode);
     }
     return resp;
   }
-  // get token
   if (url.pathname == "/v2/auth") {
     const newUrl = new URL(upstream + "/v2/");
     const resp = await fetch(newUrl.toString(), {
@@ -90,8 +63,6 @@ async function handleRequest(request) {
     }
     const wwwAuthenticate = parseAuthenticate(authenticateStr);
     let scope = url.searchParams.get("scope");
-    // autocomplete repo part into scope for DockerHub library images
-    // Example: repository:busybox:pull => repository:library/busybox:pull
     if (scope && isDockerHub) {
       let scopeParts = scope.split(":");
       if (scopeParts.length == 3 && !scopeParts[1].includes("/")) {
@@ -101,8 +72,6 @@ async function handleRequest(request) {
     }
     return await fetchToken(wwwAuthenticate, scope, authorization);
   }
-  // redirect for DockerHub library images
-  // Example: /v2/busybox/manifests/latest => /v2/library/busybox/manifests/latest
   if (isDockerHub) {
     const pathParts = url.pathname.split("/");
     if (pathParts.length == 5) {
@@ -112,19 +81,16 @@ async function handleRequest(request) {
       return Response.redirect(redirectUrl, 301);
     }
   }
-  // foward requests
   const newUrl = new URL(upstream + url.pathname);
   const newReq = new Request(newUrl, {
     method: request.method,
     headers: request.headers,
-    // don't follow redirect to dockerhub blob upstream
     redirect: isDockerHub ? "manual" : "follow",
   });
   const resp = await fetch(newReq);
   if (resp.status == 401) {
-    return responseUnauthorized(url);
+    return responseUnauthorized(url, mode);
   }
-  // handle dockerhub blob redirect manually
   if (isDockerHub && resp.status == 307) {
     const location = new URL(resp.headers.get("Location"));
     const redirectResp = await fetch(location.toString(), {
@@ -137,8 +103,6 @@ async function handleRequest(request) {
 }
 
 function parseAuthenticate(authenticateStr) {
-  // sample: Bearer realm="https://auth.ipv6.docker.com/token",service="registry.docker.io"
-  // match strings after =" and before "
   const re = /(?<=\=")(?:\\.|[^"\\])*(?=")/g;
   const matches = authenticateStr.match(re);
   if (matches == null || matches.length < 2) {
@@ -165,9 +129,9 @@ async function fetchToken(wwwAuthenticate, scope, authorization) {
   return await fetch(url, { method: "GET", headers: headers });
 }
 
-function responseUnauthorized(url) {
+function responseUnauthorized(url, mode) {
   const headers = new Headers();
-  if (MODE == "debug") {
+  if (mode == "debug") {
     headers.set(
       "Www-Authenticate",
       `Bearer realm="http://${url.host}/v2/auth",service="edgeone-docker-proxy"`
@@ -184,13 +148,45 @@ function responseUnauthorized(url) {
   });
 }
 
-export default async function(request) {
+export async function onRequest(context) {
   try {
-    return await handleRequest(request);
+    const { request, env } = context;
+    const url = new URL(request.url);
+    
+    const CUSTOM_DOMAIN = env?.CUSTOM_DOMAIN || "";
+    const MODE = env?.MODE || "production";
+    const TARGET_UPSTREAM = env?.TARGET_UPSTREAM || "";
+    
+    const routes = getRoutes(CUSTOM_DOMAIN);
+    const upstream = routeByHosts(url.hostname, routes, MODE, TARGET_UPSTREAM);
+    
+    if (upstream === "") {
+      return new Response(
+        JSON.stringify({
+          error: "NOT_FOUND",
+          message: "The requested route does not match any configured upstream",
+          hostname: url.hostname,
+          CUSTOM_DOMAIN: CUSTOM_DOMAIN || "(not set)",
+          availableRoutes: Object.keys(routes),
+          hint: CUSTOM_DOMAIN
+            ? `Please access using one of: ${Object.keys(routes).join(", ")}`
+            : "Please set CUSTOM_DOMAIN environment variable in EdgeOne Pages settings",
+        }, null, 2),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    
+    return await handleRequest(request, upstream, MODE);
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: error.message, stack: error.stack }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 }
