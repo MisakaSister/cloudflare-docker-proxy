@@ -4,17 +4,17 @@
   "description": "Docker registry proxy using EdgeOne Edge Functions",
   "env": {
     "production": {
-      "CUSTOM_DOMAIN": "libcuda.so",
+      "CUSTOM_DOMAIN": "",
       "MODE": "production",
       "TARGET_UPSTREAM": ""
     },
     "staging": {
-      "CUSTOM_DOMAIN": "libcuda.so",
+      "CUSTOM_DOMAIN": "",
       "MODE": "staging",
       "TARGET_UPSTREAM": ""
     },
     "dev": {
-      "CUSTOM_DOMAIN": "example.com",
+      "CUSTOM_DOMAIN": "",
       "MODE": "debug",
       "TARGET_UPSTREAM": "https://registry-1.docker.io"
     }
