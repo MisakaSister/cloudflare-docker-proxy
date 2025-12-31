@@ -1,0 +1,57 @@
+{
+  "name": "edgeone-docker-proxy",
+  "version": "1.0.0",
+  "description": "Docker registry proxy using EdgeOne Edge Functions",
+  "env": {
+    "production": {
+      "CUSTOM_DOMAIN": "libcuda.so",
+      "MODE": "production",
+      "TARGET_UPSTREAM": ""
+    },
+    "staging": {
+      "CUSTOM_DOMAIN": "libcuda.so",
+      "MODE": "staging",
+      "TARGET_UPSTREAM": ""
+    },
+    "dev": {
+      "CUSTOM_DOMAIN": "example.com",
+      "MODE": "debug",
+      "TARGET_UPSTREAM": "https://registry-1.docker.io"
+    }
+  },
+  "routes": [
+    {
+      "pattern": "docker.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "quay.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "gcr.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "k8s-gcr.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "k8s.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "ghcr.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "cloudsmith.*",
+      "custom_domain": true
+    },
+    {
+      "pattern": "ecr.*",
+      "custom_domain": true
+    }
+  ]
+}
+

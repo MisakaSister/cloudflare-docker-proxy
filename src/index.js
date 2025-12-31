@@ -1,9 +1,18 @@
-addEventListener("fetch", (event) => {
-  event.passThroughOnException();
-  event.respondWith(handleRequest(event.request));
-});
-
 const dockerHub = "https://registry-1.docker.io";
+
+function getEnvVar(name, defaultValue = "") {
+  if (typeof process !== "undefined" && process.env && process.env[name]) {
+    return process.env[name];
+  }
+  if (typeof globalThis !== "undefined" && globalThis[name]) {
+    return globalThis[name];
+  }
+  return defaultValue;
+}
+
+const CUSTOM_DOMAIN = getEnvVar("CUSTOM_DOMAIN", "");
+const MODE = getEnvVar("MODE", "production");
+const TARGET_UPSTREAM = getEnvVar("TARGET_UPSTREAM", "");
 
 const routes = {
   // production
@@ -161,16 +170,27 @@ function responseUnauthorized(url) {
   if (MODE == "debug") {
     headers.set(
       "Www-Authenticate",
-      `Bearer realm="http://${url.host}/v2/auth",service="cloudflare-docker-proxy"`
+      `Bearer realm="http://${url.host}/v2/auth",service="edgeone-docker-proxy"`
     );
   } else {
     headers.set(
       "Www-Authenticate",
-      `Bearer realm="https://${url.hostname}/v2/auth",service="cloudflare-docker-proxy"`
+      `Bearer realm="https://${url.hostname}/v2/auth",service="edgeone-docker-proxy"`
     );
   }
   return new Response(JSON.stringify({ message: "UNAUTHORIZED" }), {
     status: 401,
     headers: headers,
   });
+}
+
+export default async function(request) {
+  try {
+    return await handleRequest(request);
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }

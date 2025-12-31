@@ -1,40 +1,55 @@
-# cloudflare-docker-proxy
+# edgeone-docker-proxy
 
-![deploy](https://github.com/ciiiii/cloudflare-docker-proxy/actions/workflows/deploy.yaml/badge.svg)
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ciiiii/cloudflare-docker-proxy)
+Docker registry proxy using EdgeOne Edge Functions.
 
 > If you're looking for proxy for helm, maybe you can try [cloudflare-helm-proxy](https://github.com/ciiiii/cloudflare-helm-proxy).
 
 ## Deploy
 
-1. click the "Deploy With Workers" button
-2. follow the instructions to fork and deploy
-3. update routes as you requirement
+1. Build the project: `npm run build`
+2. Deploy to EdgeOne Edge Functions through EdgeOne console
+3. Configure environment variables in EdgeOne console or `edgeone.config.json`
+4. Update routes configuration as needed
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ciiiii/cloudflare-docker-proxy)
+## Configuration
 
-## Routes configuration tutorial
+### Environment Variables
 
-1. use cloudflare worker host: only support proxy one registry
-   ```javascript
-   const routes = {
-     "${workername}.${username}.workers.dev/": "https://registry-1.docker.io",
-   };
-   ```
-2. use custom domain: support proxy multiple registries route by host
-   - host your domain DNS on cloudflare
-   - add `A` record of xxx.example.com to `192.0.2.1`
-   - deploy this project to cloudflare workers
-   - add `xxx.example.com/*` to HTTP routes of workers
-   - add more records and modify the config as you need
+Configure the following environment variables in EdgeOne console or `edgeone.config.json`:
+
+- `CUSTOM_DOMAIN`: Your custom domain (e.g., `libcuda.so`)
+- `MODE`: Running mode (`production`, `staging`, or `debug`)
+- `TARGET_UPSTREAM`: Target upstream URL (used in debug mode)
+
+### Routes Configuration
+
+The proxy supports multiple Docker registries routed by hostname. Configure your domain DNS on EdgeOne:
+
+1. Add DNS records for your subdomains (e.g., `docker.example.com`, `quay.example.com`)
+2. Configure EdgeOne Edge Functions routes to match these subdomains
+3. Update the routes in `src/index.js` as needed:
+
    ```javascript
    const routes = {
      "docker.libcuda.so": "https://registry-1.docker.io",
      "quay.libcuda.so": "https://quay.io",
-     "gcr.libcuda.so": "https://k8s.gcr.io",
+     "gcr.libcuda.so": "https://gcr.io",
      "k8s-gcr.libcuda.so": "https://k8s.gcr.io",
+     "k8s.libcuda.so": "https://registry.k8s.io",
      "ghcr.libcuda.so": "https://ghcr.io",
+     "cloudsmith.libcuda.so": "https://docker.cloudsmith.io",
+     "ecr.libcuda.so": "https://public.ecr.aws",
    };
    ```
+
+## Supported Registries
+
+- Docker Hub (`docker.*`)
+- Quay.io (`quay.*`)
+- Google Container Registry (`gcr.*`)
+- Kubernetes GCR (`k8s-gcr.*`)
+- Kubernetes Registry (`k8s.*`)
+- GitHub Container Registry (`ghcr.*`)
+- Cloudsmith (`cloudsmith.*`)
+- Amazon ECR Public (`ecr.*`)
 
