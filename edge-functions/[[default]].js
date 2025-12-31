@@ -57,15 +57,31 @@ async function handleRequest(request, upstream, mode) {
     if (authorization) {
       headers.set("Authorization", authorization);
     }
-    const resp = await fetch(newUrl.toString(), {
-      method: "GET",
-      headers: headers,
-      redirect: "follow",
-    });
-    if (resp.status === 401) {
-      return responseUnauthorized(url, mode);
+    try {
+      const resp = await fetch(newUrl.toString(), {
+        method: "GET",
+        headers: headers,
+        redirect: "follow",
+      });
+      if (resp.status === 401) {
+        return responseUnauthorized(url, mode);
+      }
+      return resp;
+    } catch (error) {
+      return new Response(
+        JSON.stringify({
+          error: "UPSTREAM_ERROR",
+          message: `Failed to connect to upstream: ${upstream}`,
+          errorType: error.name,
+          errorMessage: error.message,
+          hint: "This might be a network issue or the upstream server is unreachable",
+        }, null, 2),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
-    return resp;
   }
   if (url.pathname == "/v2/auth") {
     const newUrl = new URL(upstream + "/v2/");
@@ -106,19 +122,36 @@ async function handleRequest(request, upstream, mode) {
     headers: request.headers,
     redirect: isDockerHub ? "manual" : "follow",
   });
-  const resp = await fetch(newReq);
-  if (resp.status == 401) {
-    return responseUnauthorized(url, mode);
+  try {
+    const resp = await fetch(newReq);
+    if (resp.status == 401) {
+      return responseUnauthorized(url, mode);
+    }
+    if (isDockerHub && resp.status == 307) {
+      const location = new URL(resp.headers.get("Location"));
+      const redirectResp = await fetch(location.toString(), {
+        method: "GET",
+        redirect: "follow",
+      });
+      return redirectResp;
+    }
+    return resp;
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        error: "UPSTREAM_ERROR",
+        message: `Failed to connect to upstream: ${upstream}`,
+        pathname: url.pathname,
+        errorType: error.name,
+        errorMessage: error.message,
+        hint: "This might be a network issue or the upstream server is unreachable. In local dev environment, external fetch might not be supported.",
+      }, null, 2),
+      {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
-  if (isDockerHub && resp.status == 307) {
-    const location = new URL(resp.headers.get("Location"));
-    const redirectResp = await fetch(location.toString(), {
-      method: "GET",
-      redirect: "follow",
-    });
-    return redirectResp;
-  }
-  return resp;
 }
 
 function parseAuthenticate(authenticateStr) {
