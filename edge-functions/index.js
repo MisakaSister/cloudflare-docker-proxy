@@ -2,6 +2,25 @@ const dockerHub = "https://registry-1.docker.io";
 
 function getRoutes(customDomain) {
   if (!customDomain) return {};
+  
+  // 如果域名本身以 docker. 开头，直接使用它作为 Docker Hub 入口
+  // 例如：docker.wengguodong.com -> Docker Hub
+  // 同时支持其他子域名：quay.docker.wengguodong.com -> Quay.io
+  if (customDomain.startsWith("docker.")) {
+    return {
+      [customDomain]: dockerHub, // 根域名直接指向 Docker Hub
+      ["quay." + customDomain]: "https://quay.io",
+      ["gcr." + customDomain]: "https://gcr.io",
+      ["k8s-gcr." + customDomain]: "https://k8s.gcr.io",
+      ["k8s." + customDomain]: "https://registry.k8s.io",
+      ["ghcr." + customDomain]: "https://ghcr.io",
+      ["cloudsmith." + customDomain]: "https://docker.cloudsmith.io",
+      ["ecr." + customDomain]: "https://public.ecr.aws",
+      ["docker-staging." + customDomain]: dockerHub,
+    };
+  }
+  
+  // 标准模式：使用子域名路由
   return {
     ["docker." + customDomain]: dockerHub,
     ["quay." + customDomain]: "https://quay.io",
