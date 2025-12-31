@@ -176,6 +176,27 @@ export async function onRequest(context) {
     const MODE = env?.MODE || "production";
     const TARGET_UPSTREAM = env?.TARGET_UPSTREAM || "";
     
+    // 调试信息：如果访问 /debug 路径，返回配置信息
+    if (url.pathname === "/debug" || url.pathname === "/.well-known/debug") {
+      const routes = getRoutes(CUSTOM_DOMAIN);
+      return new Response(
+        JSON.stringify({
+          hostname: url.hostname,
+          pathname: url.pathname,
+          CUSTOM_DOMAIN: CUSTOM_DOMAIN,
+          MODE: MODE,
+          TARGET_UPSTREAM: TARGET_UPSTREAM,
+          routes: routes,
+          availableRoutes: Object.keys(routes),
+          envKeys: Object.keys(env || {}),
+        }, null, 2),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    
     const routes = getRoutes(CUSTOM_DOMAIN);
     let upstream = routeByHosts(url.hostname, routes, MODE, TARGET_UPSTREAM);
     
@@ -203,14 +224,17 @@ export async function onRequest(context) {
       }
     }
     
-    // 如果还是没有匹配到任何上游，返回错误信息
+    // 如果还是没有匹配到任何上游，返回详细的错误信息
     if (upstream === "") {
       return new Response(
         JSON.stringify({
           error: "NOT_FOUND",
           message: "The requested route does not match any configured upstream",
           hostname: url.hostname,
+          pathname: url.pathname,
           CUSTOM_DOMAIN: CUSTOM_DOMAIN || "(not set)",
+          MODE: MODE,
+          routes: routes,
           availableRoutes: Object.keys(routes),
           hint: CUSTOM_DOMAIN
             ? `Please access using one of: ${Object.keys(routes).join(", ")}`
@@ -218,6 +242,7 @@ export async function onRequest(context) {
           usage: isEdgeOneDefaultDomain
             ? "When using EdgeOne default domain, it defaults to Docker Hub. Use ?route=docker|quay|gcr|ghcr to specify other registries."
             : "Use custom domain subdomains to access different registries",
+          debug: "Visit /debug to see full configuration",
         }, null, 2),
         {
           status: 404,
@@ -229,7 +254,11 @@ export async function onRequest(context) {
     return await handleRequest(request, upstream, MODE);
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: error.message, stack: error.stack }),
+      JSON.stringify({ 
+        error: error.message, 
+        stack: error.stack,
+        type: error.constructor.name,
+      }, null, 2),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },
